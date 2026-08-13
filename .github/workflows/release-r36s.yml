@@ -1,33 +1,30 @@
-name: Build Release
+name: Build R36S / ArkOS Release
+
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*-r36s.*'
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version tag to build against (e.g. v0.3.0). Does not push a tag or publish a release -- use this to validate the build/package steps only.'
+        description: 'Version to build, for example v0.3.2-r36s.1'
         required: true
+        default: 'v0.3.2-r36s.1'
 
 permissions:
   contents: write
 
 jobs:
-  build-release:
-    if: github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-r36s.')
+  build-r36s:
     runs-on: ubuntu-22.04
+
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
           fetch-depth: 0
 
-      # GitHub's ubuntu-22.04 runner is amd64; the default Ubuntu mirrors only
-      # carry amd64/i386 packages. arm64 packages live on the separate ports
-      # mirror, so it needs to be added explicitly, and the existing default
-      # sources restricted to amd64 so apt doesn't also try (and fail) to
-      # fetch nonexistent arm64 indices from them.
-      - name: Enable arm64 architecture
+      - name: Enable ARM64 packages
         run: |
           sudo dpkg --add-architecture arm64
           sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list
@@ -37,18 +34,21 @@ jobs:
           deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports jammy-security main restricted universe multiverse
           EOF
 
-      - name: Install cross-compilation toolchain and dependencies
+      - name: Install cross-build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             gcc-aarch64-linux-gnu \
             g++-aarch64-linux-gnu \
+            binutils-aarch64-linux-gnu \
             cmake \
             ninja-build \
             pkg-config \
             python3 \
+            python3-pip \
             git \
             zip \
+            unzip \
             xkb-data \
             protobuf-compiler \
             libssl-dev:arm64 \
@@ -69,48 +69,48 @@ jobs:
             qtmultimedia5-dev:arm64 \
             libqt5opengl5-dev:arm64 \
             qtbase5-dev \
-            qttools5-dev \
-            python3-pip
+            qttools5-dev
           pip3 install protobuf grpcio-tools
 
-      - name: Build and package release
+      - name: Build ARM64 Retro Chiaki
+        env:
+          R36S_VERSION: ${{ inputs.version || github.ref_name }}
         run: |
+          export CXXFLAGS="-DCHIAKI_R36S_BUILD_VERSION=\\\"${R36S_VERSION#v}\\\""
           chmod +x packaging/build/ci-package.sh
-          packaging/build/ci-package.sh "${{ inputs.version || github.ref_name }}"
+          packaging/build/ci-package.sh "$R36S_VERSION"
 
-      # The workflow_dispatch case has no tag to attach a release to, so
-      # upload the zip as a normal build artifact instead -- otherwise a
-      # manual test run's output would just be discarded with the runner.
-      - name: Upload build artifact (workflow_dispatch test runs)
+      - name: Assemble R36S / ArkOS package
+        env:
+          R36S_VERSION: ${{ inputs.version || github.ref_name }}
+        run: |
+          chmod +x packaging/r36s/make-r36s-release.sh
+          packaging/r36s/make-r36s-release.sh "$R36S_VERSION"
+          rm -f dist/*portmaster-muos-h700.zip
+
+      - name: Upload manual-build artifact
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
-          name: retro-chiaki-${{ inputs.version }}
-          path: dist/*.zip
+          name: retro-chiaki-${{ inputs.version }}-r36s-arkos
+          path: dist/*-r36s-arkos.zip
 
-      - name: Generate changelog
-        id: git_cliff
-        uses: orhun/git-cliff-action@v4
-        with:
-          config: cliff.toml
-          args: --latest --strip header
-        env:
-          OUTPUT: CHANGELOG.md
-          GITHUB_REPO: ${{ github.repository }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # Skipped for a manual workflow_dispatch test run: there's no pushed
-      # tag to attach a release to in that case, and the build/package steps
-      # above are already what such a run is meant to validate.
-      - name: Create GitHub Release
+      - name: Create R36S GitHub Release
         if: github.event_name == 'push'
         uses: softprops/action-gh-release@v3
         with:
-          name: Retro Chiaki ${{ github.ref_name }}
-          body: ${{ steps.git_cliff.outputs.content }}
+          name: Retro Chiaki R36S / ArkOS ${{ github.ref_name }}
+          body: |
+            Experimental R36S / ArkOS release by ArkDrakken.
+
+            Target: R36S, RK3326, Mali-G31, ArkOS, 640x480.
+
+            This package keeps its compatibility runtime private to Retro Chiaki and does not replace ArkOS system libraries.
+
+            See README-R36S.md and NOTICE-R36S.md in the repository/package for installation, status and attribution.
           draft: false
-          prerelease: false
-          make_latest: true
+          prerelease: true
+          make_latest: false
           fail_on_unmatched_files: true
           files: |
-            dist/*.zip
+            dist/*-r36s-arkos.zip
