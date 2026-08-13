@@ -1,4 +1,3 @@
-
 // ugly workaround because Windows does weird things and ENOTIME
 int real_main(int argc, char *argv[]);
 int main(int argc, char *argv[]) { return real_main(argc, argv); }
@@ -30,6 +29,10 @@ int main(int argc, char *argv[]) { return real_main(argc, argv); }
 #include <QMap>
 #include <QSurfaceFormat>
 
+#ifndef CHIAKI_R36S_BUILD_VERSION
+#define CHIAKI_R36S_BUILD_VERSION "dev"
+#endif
+
 Q_DECLARE_METATYPE(ChiakiLogLevel)
 
 #ifdef CHIAKI_ENABLE_CLI
@@ -57,7 +60,9 @@ int real_main(int argc, char *argv[])
 	qRegisterMetaType<ChiakiLogLevel>();
 
 	QApplication::setOrganizationName("Chiaki");
-	QApplication::setApplicationName("Chiaki");
+	QApplication::setApplicationName("Retro Chiaki R36S/ArkOS - port by ArkDrakken");
+	QApplication::setApplicationVersion(CHIAKI_R36S_BUILD_VERSION);
+	fprintf(stderr, "Retro Chiaki R36S/ArkOS port by ArkDrakken (%s)\n", CHIAKI_R36S_BUILD_VERSION);
 
 	ChiakiErrorCode err = chiaki_lib_init();
 	if(err != CHIAKI_ERR_SUCCESS)
